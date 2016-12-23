@@ -19,10 +19,12 @@ import CoreFn.Ident (Ident(..))
 import CoreFn.Names (Qualified, readQualified)
 import CoreFn.Util (objectProp)
 import Data.Either (Either(..), either)
+import Data.Foldable (class Foldable, foldMap)
 import Data.Foreign (F, Foreign, ForeignError(..), fail, parseJSON, readArray, readBoolean, readChar, readInt, readNumber, readString)
 import Data.Foreign.Class (readProp)
 import Data.Foreign.Index (prop)
-import Data.Traversable (intercalate, sequence, traverse)
+import Data.Monoid (mempty)
+import Data.Traversable (class Traversable, foldlDefault, foldrDefault, intercalate, sequence, sequenceDefault, traverse)
 import Data.Tuple (Tuple(..))
 
 -- |
@@ -58,6 +60,22 @@ data Literal a
 derive instance eqLiteral :: Eq a => Eq (Literal a)
 derive instance ordLiteral :: Ord a => Ord (Literal a)
 
+instance foldableLiteral :: Foldable Literal where
+  foldMap f (ArrayLiteral x) = foldMap f x
+  foldMap f (ObjectLiteral x) = foldMap (foldMap f) x
+  foldMap _ _ = mempty
+
+  foldl f = foldlDefault f
+  foldr f = foldrDefault f
+
+instance functorLiteral :: Functor Literal where
+  map _ (NumericLiteral x) = NumericLiteral x
+  map _ (StringLiteral x) = StringLiteral x
+  map _ (CharLiteral x) = CharLiteral x
+  map _ (BooleanLiteral x) = BooleanLiteral x
+  map f (ArrayLiteral x) = ArrayLiteral (map f x)
+  map f (ObjectLiteral x) = ObjectLiteral (map (map f) x)
+
 instance showLiteral :: Show a => Show (Literal a) where
   show (NumericLiteral e) = "(NumericLiteral " <> either show show e <> ")"
   show (StringLiteral s) = "(StringLiteral " <> show s <> ")"
@@ -65,6 +83,16 @@ instance showLiteral :: Show a => Show (Literal a) where
   show (BooleanLiteral b) = "(BooleanLiteral " <> show b <> ")"
   show (ArrayLiteral a) = "(ArrayLiteral " <> show a <> ")"
   show (ObjectLiteral o) = "(ObjectLiteral" <> show o <> ")"
+
+instance traversableLiteral :: Traversable Literal where
+  traverse _ (NumericLiteral x) = pure (NumericLiteral x)
+  traverse _ (StringLiteral x) = pure (StringLiteral x)
+  traverse _ (CharLiteral x) = pure (CharLiteral x)
+  traverse _ (BooleanLiteral x) = pure (BooleanLiteral x)
+  traverse f (ArrayLiteral x) = ArrayLiteral <$> traverse f x
+  traverse f (ObjectLiteral x) = ObjectLiteral <$> traverse (traverse f) x
+
+  sequence = sequenceDefault
 
 readLiteral :: Foreign -> F (Literal (Expr Unit))
 readLiteral x = do
@@ -130,10 +158,30 @@ data Expr a
 derive instance eqExpr :: Eq a => Eq (Expr a)
 derive instance ordExpr :: Ord a => Ord (Expr a)
 
-instance showExpr :: Show a => Show (Expr a) where
+instance foldableExpr :: Foldable Expr where
+  foldMap f (Literal m y) = f m <> foldMap (foldMap f) y
+  foldMap f (App m x y) = f m <> foldMap f x <> foldMap f y
+  foldMap f (Var x _) = f x
+
+  foldl f = foldlDefault f
+  foldr f = foldrDefault f
+
+instance functorExpr :: Functor Expr where
+  map f (Literal x y) = Literal (f x) (map (map f) y)
+  map f (App a x y) = App (f a) (map f x) (map f y)
+  map f (Var x y) = Var (f x) y
+
+instance showExpr :: Show a =>  Show (Expr a) where
   show (Literal x y) = "(Literal " <> show x <> " " <> show y <> ")"
   show (App x y z) = "(App " <> show x <> " " <> show y <> " " <> show z <> ")"
   show (Var x y) = "(Var " <> show x <> " " <> show y <> ")"
+
+instance traversableExpr :: Traversable Expr where
+  traverse f (Literal x y) = Literal <$> f x <*> traverse (traverse f) y
+  traverse f (App a x y) = App <$> f a <*> traverse f x <*> traverse f y
+  traverse f (Var x y) = Var <$> f x <*> pure y
+
+  sequence = sequenceDefault
 
 readExpr :: Foreign -> F (Expr Unit)
 readExpr x = do
