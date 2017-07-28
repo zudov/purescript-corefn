@@ -15,7 +15,7 @@ import Data.List.NonEmpty (singleton)
 import Data.Tuple (Tuple(..))
 import Test.Util (assertEqual, expectFailure, expectSuccess)
 
-testModule :: forall e. Eff (console :: CONSOLE, err :: EXCEPTION | e) Unit
+testModule :: forall e. Eff (console :: CONSOLE, exception :: EXCEPTION | e) Unit
 testModule = do
   log ""
   log "Test Module"
@@ -41,7 +41,7 @@ testModule = do
     """
 
     expectFailure description (readModuleJSON json) \x ->
-      assertEqual x (singleton (ForeignError "Module name not found"))
+      assertEqual x "Module name not found"
 
   testName = do
     let description = "Module name from JSON results in success"

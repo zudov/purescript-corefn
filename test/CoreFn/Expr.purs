@@ -18,7 +18,7 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Test.Util (assertEqual, expectFailure, expectSuccess)
 
-testLiterals :: forall e. Eff (console :: CONSOLE, err :: EXCEPTION | e) Unit
+testLiterals :: forall e. Eff (console :: CONSOLE, exception :: EXCEPTION | e) Unit
 testLiterals = do
   log ""
   log "Test Literals"
@@ -180,9 +180,9 @@ testLiterals = do
     """
 
     expectFailure description (readLiteralJSON json) \x ->
-      assertEqual x (singleton (ForeignError "Unknown literal: SomeLiteral"))
+      assertEqual x "Unknown literal: SomeLiteral"
 
-testExpr :: forall e. Eff (console :: CONSOLE, err :: EXCEPTION | e) Unit
+testExpr :: forall e. Eff (console :: CONSOLE, exception :: EXCEPTION | e) Unit
 testExpr = do
   log ""
   log "Test Expr"
@@ -305,9 +305,9 @@ testExpr = do
     """
 
     expectFailure description (readExprJSON json) \x ->
-      assertEqual x (singleton (ForeignError "Unknown expression: SomeExpression"))
+      assertEqual x "Unknown expression: SomeExpression"
 
-testBindings :: forall e. Eff (console :: CONSOLE, err :: EXCEPTION | e) Unit
+testBindings :: forall e. Eff (console :: CONSOLE, exception :: EXCEPTION | e) Unit
 testBindings = do
   log ""
   log "Test Bind"
