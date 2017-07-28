@@ -15,7 +15,7 @@ import Data.List.Types (NonEmptyList)
 
 assertEqual
   :: forall a eff
-   . (Eq a, Show a)
+   . Eq a => Show a
   => a
   -> a
   -> Eff (console :: CONSOLE, exception :: EXCEPTION | eff) Unit
