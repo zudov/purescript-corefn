@@ -8,7 +8,11 @@ module CoreFn.Ident
   ) where
 
 import Prelude
-import Data.Foreign (F, Foreign, parseJSON, readString)
+
+import Data.Argonaut.Core (Json)
+import Data.Argonaut.Decode (class DecodeJson, decodeJson)
+import Data.Argonaut.Parser (jsonParser)
+import Data.Either (Either)
 import Data.Generic (gShow, class Generic)
 import Data.Maybe (Maybe)
 
@@ -29,8 +33,11 @@ derive instance ordIdent :: Ord Ident
 instance showIdent :: Show Ident where
   show = gShow
 
-readIdent :: Foreign -> F Ident
-readIdent x = Ident <$> readString x
+instance decodeJsonIdent :: DecodeJson Ident where
+  decodeJson = readIdent
 
-readIdentJSON :: String -> F Ident
-readIdentJSON = parseJSON >=> readIdent
+readIdent :: Json -> Either String Ident
+readIdent x = Ident <$> decodeJson x
+
+readIdentJSON :: String -> Either String Ident
+readIdentJSON = jsonParser >=> readIdent

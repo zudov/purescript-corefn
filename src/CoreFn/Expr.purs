@@ -14,16 +14,19 @@ module CoreFn.Expr
   ) where
 
 import Prelude
-import Data.Foreign.Keys as K
-import CoreFn.Ident (Ident(..), readIdent)
-import CoreFn.Names (Qualified, readQualified)
-import CoreFn.Util (objectProps)
+
+import Data.Argonaut.Core (Json)
+import Data.Argonaut.Decode (class DecodeJson, decodeJson)
+import Data.Argonaut.Parser (jsonParser)
+import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
-import Data.Foreign (F, Foreign, ForeignError(..), fail, parseJSON, readArray, readBoolean, readChar, readInt, readNumber, readString)
-import Data.Foreign.Class (readProp)
-import Data.Foreign.Index (prop)
-import Data.Traversable (sequence, traverse)
+import Data.StrMap as StrMap
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
+
+import CoreFn.Ident (Ident(..))
+import CoreFn.Names (Qualified, readQualified)
+import CoreFn.Util (objectProps, jsonIndex)
 
 -- |
 -- Data type for literal values. Parameterised so it can be used for Exprs and
@@ -66,49 +69,35 @@ instance showLiteral :: Show a => Show (Literal a) where
   show (ArrayLiteral a) = "(ArrayLiteral " <> show a <> ")"
   show (ObjectLiteral o) = "(ObjectLiteral" <> show o <> ")"
 
-readLiteral :: Foreign -> F (Literal (Expr Unit))
-readLiteral x = do
-  label <- readProp 0 x >>= readString
-  readLiteral' label x
+instance decodeJsonLiteral :: DecodeJson (Literal (Expr Unit)) where
+  decodeJson = decodeJson >=> readLiteral
 
+readLiteral :: Json -> Either String (Literal (Expr Unit))
+readLiteral json = lmap ("Literal: " <> _) do
+  label :: String <- arg0
+  lmap (\err -> label <> ": " <> err) do
+    value label
   where
 
-  readValues :: Array Foreign -> F (Array (Expr Unit))
-  readValues = traverse readExpr
+  value :: String -> Either String (Literal (Expr Unit))
+  value = case _ of
+    "IntLiteral"     -> arg1 <#> Left  >>> NumericLiteral
+    "NumberLiteral"  -> arg1 <#> Right >>> NumericLiteral
+    "StringLiteral"  -> arg1 <#> StringLiteral
+    "CharLiteral"    -> arg1 <#> CharLiteral
+    "BooleanLiteral" -> arg1 <#> BooleanLiteral
+    "ArrayLiteral"   -> arg1 <#> ArrayLiteral
+    "ObjectLiteral"  -> arg1 <#> StrMap.toUnfoldable >>> ObjectLiteral
+    _ -> Left "Unknown literal"
 
-  readPair :: Foreign -> String -> F (Tuple String (Expr Unit))
-  readPair obj key = Tuple key <$> (prop key obj >>= readExpr)
+  arg0 :: ∀ a. DecodeJson a => Either String a
+  arg0 = jsonIndex json 0
 
-  readPairs :: Foreign -> Array String -> F (Array (Tuple String (Expr Unit)))
-  readPairs obj = sequence <<< (map <<< readPair) obj
+  arg1 :: ∀ a. DecodeJson a => Either String a
+  arg1 = jsonIndex json 1
 
-  readLiteral' :: String -> Foreign -> F (Literal (Expr Unit))
-  readLiteral' "IntLiteral" v = do
-    value <- readProp 1 v
-    NumericLiteral <$> Left <$> readInt value
-  readLiteral' "NumberLiteral" v = do
-    value <- readProp 1 v
-    NumericLiteral <$> Right <$> readNumber value
-  readLiteral' "StringLiteral" v = do
-    value <- readProp 1 v
-    StringLiteral <$> readString value
-  readLiteral' "CharLiteral" v = do
-    value <- readProp 1 v
-    CharLiteral <$> readChar value
-  readLiteral' "BooleanLiteral" v = do
-    value <- readProp 1 v
-    BooleanLiteral <$> readBoolean value
-  readLiteral' "ArrayLiteral" v = do
-    array <- readProp 1 v >>= readArray
-    ArrayLiteral <$> readValues array
-  readLiteral' "ObjectLiteral" v = do
-    obj <- readProp 1 v
-    keys <- K.keys obj
-    ObjectLiteral <$> readPairs obj keys
-  readLiteral' label _ = fail $ ForeignError $ "Unknown literal: " <> label
-
-readLiteralJSON :: String -> F (Literal (Expr Unit))
-readLiteralJSON = parseJSON >=> readLiteral
+readLiteralJSON :: String -> Either String (Literal (Expr Unit))
+readLiteralJSON = jsonParser >=> decodeJson
 
 -- |
 -- Data type for expressions and terms
@@ -140,32 +129,46 @@ instance showExpr :: Show a => Show (Expr a) where
   show (App x y z) = "(App " <> show x <> " " <> show y <> " " <> show z <> ")"
   show (Var x y) = "(Var " <> show x <> " " <> show y <> ")"
 
-readExpr :: Foreign -> F (Expr Unit)
-readExpr x = do
-  label <- readProp 0 x >>= readString
-  readExpr' label x
+instance decodeJsonExpr :: DecodeJson (Expr Unit) where
+  decodeJson = readExpr
 
+readExpr :: Json -> Either String (Expr Unit)
+readExpr json = lmap ("Expr: " <> _) do
+  label <- arg0
+  lmap (\err -> label <> ": " <> err) do
+    expr label
   where
 
-  readExpr' :: String -> Foreign -> F (Expr Unit)
-  readExpr' "Literal" y = do
-    value <- readProp 1 y
-    Literal unit <$> readLiteral value
-  readExpr' "Abs" y = do
-    ident <- readProp 1 y
-    expr <- readProp 2 y
-    Abs unit <$> readIdent ident <*> readExpr expr
-  readExpr' "App" y = do
-    expr1 <- readProp 1 y
-    expr2 <- readProp 2 y
-    App unit <$> readExpr expr1 <*> readExpr expr2
-  readExpr' "Var" y = do
-    value <- readProp 1 y
-    Var unit <$> readQualified Ident value
-  readExpr' label _ = fail $ ForeignError $ "Unknown expression: " <> label
+  expr :: String -> Either String (Expr Unit)
+  expr = case _ of
+    "Literal" -> do
+      value :: Literal (Expr Unit) <- arg1
+      pure $ Literal unit value
+    "Abs" -> do
+      param :: Ident     <- lmap ("param: " <> _) arg1
+      body  :: Expr Unit <- lmap ("body: " <> _)  arg2
+      pure $ Abs unit param body
+    "App" -> do
+      expr1 :: Expr Unit <- lmap ("expr1: " <> _) arg1
+      expr2 :: Expr Unit <- lmap ("expr2: " <> _) arg2
+      pure $ App unit expr1 expr2
+    "Var" -> do
+      name :: Qualified Ident <- arg1
+      pure $ Var unit name
+    _ ->
+      Left $ "Unknown expression"
 
-readExprJSON :: String -> F (Expr Unit)
-readExprJSON = parseJSON >=> readExpr
+  arg0 :: forall a. DecodeJson a => Either String a
+  arg0 = jsonIndex json 0
+
+  arg1 :: forall a. DecodeJson a => Either String a
+  arg1 = jsonIndex json 1
+
+  arg2 :: forall a. DecodeJson a => Either String a
+  arg2 = jsonIndex json 2
+
+readExprJSON :: String -> Either String (Expr Unit)
+readExprJSON = jsonParser >=> readExpr
 
 -- |
 --  A let or module binding.
@@ -178,7 +181,10 @@ derive instance ordBind :: Ord a => Ord (Bind a)
 instance showBind :: Show a => Show (Bind a) where
   show (Bind x) = "(Bind " <> show x <> ")"
 
-readBind :: Foreign -> F (Bind Unit)
+instance decodeJsonBind :: DecodeJson (Bind Unit) where
+  decodeJson = readBind
+
+readBind :: Json -> Either String (Bind Unit)
 readBind x = do
   pairs <- objectProps x
   bindings <- traverse fromPair pairs
@@ -187,12 +193,12 @@ readBind x = do
   where
 
   fromPair
-    :: { key :: String, value :: Foreign }
-    -> F (Tuple (Tuple Unit Ident) (Expr Unit))
+    :: { key :: String, value :: Json }
+    -> Either String (Tuple (Tuple Unit Ident) (Expr Unit))
   fromPair pair = do
     expr <- readExpr pair.value
     let ident = Ident pair.key
     pure $ Tuple (Tuple unit ident) expr
 
-readBindJSON :: String -> F (Bind Unit)
-readBindJSON = parseJSON >=> readBind
+readBindJSON :: String -> Either String (Bind Unit)
+readBindJSON = jsonParser >=> readBind

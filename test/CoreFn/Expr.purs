@@ -12,8 +12,6 @@ import CoreFn.Expr (Bind(..), Expr(..), Literal(..), readBindJSON, readExprJSON,
 import CoreFn.Ident (Ident(..))
 import CoreFn.Names (ModuleName(..), Qualified(..))
 import Data.Either (Either(..))
-import Data.Foreign (ForeignError(..))
-import Data.List.NonEmpty (singleton)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Test.Util (assertEqual, expectFailure, expectSuccess)
@@ -180,7 +178,7 @@ testLiterals = do
     """
 
     expectFailure description (readLiteralJSON json) \x ->
-      assertEqual x "Unknown literal: SomeLiteral"
+      assertEqual x "Literal: SomeLiteral: Unknown literal"
 
 testExpr :: forall e. Eff (console :: CONSOLE, exception :: EXCEPTION | e) Unit
 testExpr = do
@@ -305,7 +303,7 @@ testExpr = do
     """
 
     expectFailure description (readExprJSON json) \x ->
-      assertEqual x "Unknown expression: SomeExpression"
+      assertEqual x "Expr: SomeExpression: Unknown expression"
 
 testBindings :: forall e. Eff (console :: CONSOLE, exception :: EXCEPTION | e) Unit
 testBindings = do

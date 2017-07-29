@@ -7,11 +7,8 @@ module Test.Util
 import Prelude
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (log, CONSOLE)
-import Control.Monad.Eff.Exception (EXCEPTION, throwException, error)
-import Control.Monad.Except (runExcept)
+import Control.Monad.Eff.Exception (EXCEPTION, error, throwException)
 import Data.Either (either, Either)
-import Data.Foreign (F, ForeignError)
-import Data.List.Types (NonEmptyList)
 
 assertEqual
   :: forall a eff
@@ -63,7 +60,7 @@ expectFailure
   :: forall a eff
    . Show a
   => String
-  -> F a
+  -> Either String a
   -> (String -> Eff (console :: CONSOLE, exception :: EXCEPTION | eff) Unit)
   -> Eff (console :: CONSOLE, exception :: EXCEPTION | eff) Unit
 expectFailure description = expectLeft description
@@ -71,10 +68,10 @@ expectFailure description = expectLeft description
 expectSuccess
   :: forall a eff
    . String
-  -> F a
-expectSuccess description x = expectRight description (runExcept x)
+  -> Either String a
   -> (a -> Eff (console :: CONSOLE, exception :: EXCEPTION | eff) Unit)
   -> Eff (console :: CONSOLE, exception :: EXCEPTION | eff) Unit
+expectSuccess description = expectRight description
 
 green :: String
 green = "\x1b[32m"

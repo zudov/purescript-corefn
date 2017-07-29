@@ -14,13 +14,16 @@ module CoreFn.Names
   ) where
 
 import Prelude
-import Control.Error.Util (exceptNoteM)
-import Data.Array (init, last, null)
-import Data.Foreign (F, Foreign, ForeignError(..), parseJSON, readString)
+import Data.Argonaut.Core as Json
+import Data.Array as Array
+import Control.MonadZero (guard)
+import Data.Argonaut.Core (Json)
+import Data.Argonaut.Decode (class DecodeJson, decodeJson)
+import Data.Argonaut.Parser (jsonParser)
+import Data.Bifunctor (lmap)
+import Data.Either (Either, note)
 import Data.Generic (class Generic, gShow)
-import Data.List.NonEmpty (singleton)
-import Data.List.Types (NonEmptyList)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe)
 import Data.Newtype (class Newtype)
 import Data.String (Pattern(..), joinWith, split)
 
@@ -35,11 +38,14 @@ derive instance newtypeModuleName :: Newtype ModuleName _
 derive instance ordModuleName :: Ord ModuleName
 derive newtype instance showModuleName :: Show ModuleName
 
-readModuleName :: Foreign -> F ModuleName
-readModuleName x = ModuleName <$> readString x
+instance decodeJsonModuleName :: DecodeJson ModuleName where
+  decodeJson = readModuleName
 
-readModuleNameJSON :: String -> F ModuleName
-readModuleNameJSON = parseJSON >=> readModuleName
+readModuleName :: Json -> Either String ModuleName
+readModuleName x = ModuleName <$> decodeJson x
+
+readModuleNameJSON :: String -> Either String ModuleName
+readModuleNameJSON = jsonParser >=> readModuleName
 
 -- |
 -- Operator alias names.
@@ -52,11 +58,14 @@ derive instance newtypeOpName :: Newtype OpName _
 derive instance ordOpName :: Ord OpName
 derive newtype instance showOpName :: Show OpName
 
-readOpName :: Foreign -> F OpName
-readOpName x = OpName <$> readString x
+instance decodeJsonOpName :: DecodeJson OpName where
+  decodeJson = readOpName
 
-readOpNameJSON :: String -> F OpName
-readOpNameJSON = parseJSON >=> readOpName
+readOpName :: Json -> Either String OpName
+readOpName x = OpName <$> decodeJson x
+
+readOpNameJSON :: String -> Either String OpName
+readOpNameJSON = jsonParser >=> readOpName
 
 -- |
 -- Proper name, i.e. capitalized names for e.g. module names, type/data
@@ -70,11 +79,14 @@ derive instance newtypeProperName :: Newtype ProperName _
 derive instance ordProperName :: Ord ProperName
 derive newtype instance showProperName :: Show ProperName
 
-readProperName :: Foreign -> F ProperName
-readProperName x = ProperName <$> readString x
+instance decodeJsonProperName :: DecodeJson ProperName where
+  decodeJson = readProperName
 
-readProperNameJSON :: String -> F ProperName
-readProperNameJSON = parseJSON >=> readProperName
+readProperName :: Json -> Either String ProperName
+readProperName x = ProperName <$> decodeJson x
+
+readProperNameJSON :: String -> Either String ProperName
+readProperNameJSON = jsonParser >=> readProperName
 
 -- |
 -- A qualified name, i.e. a name with an optional module name
@@ -84,39 +96,37 @@ data Qualified a = Qualified (Maybe ModuleName) a
 derive instance eqQualified :: (Generic a, Eq a) => Eq (Qualified a)
 derive instance genericQualified :: (Generic a) => Generic (Qualified a)
 derive instance ordQualified :: (Generic a, Ord a) => Ord (Qualified a)
+derive instance functorQualified :: Functor Qualified
 
 instance showQualified :: (Generic a, Show a) => Show (Qualified a) where
   show = gShow
 
-readQualified :: forall a. (String -> a) -> Foreign -> F (Qualified a)
-readQualified ctor = readString >=> toQualified ctor
+instance decodeJsonQualified :: DecodeJson a => DecodeJson (Qualified a) where
+  decodeJson = readQualified
 
+
+readQualified
+  :: forall a. DecodeJson a => Json -> Either String (Qualified a)
+readQualified json = lmap ("Qualified: " <> _) do
+  parseName =<< decodeJson json
   where
 
-  arrayToMaybe :: forall b. Array b -> Maybe (Array b)
-  arrayToMaybe xs | null xs = Nothing
-                  | otherwise = Just xs
+  parseName :: String -> Either String (Qualified a)
+  parseName s = do
+    let parts = split (Pattern delimiter) s
+    { init, last } <- note "Empty name" $ Array.unsnoc parts
+    let moduleName = toModuleName init
+    valueName <- decodeJson $ Json.fromString last
+    pure $ Qualified moduleName valueName
 
-  init' :: forall b. Array b -> Maybe (Array b)
-  init' = init >=> arrayToMaybe
+  toModuleName :: Array String -> Maybe ModuleName
+  toModuleName parts = do
+    guard $ not $ Array.null parts
+    pure $ ModuleName $ joinWith delimiter parts
 
   delimiter = "."
 
-  toModuleName :: Array String -> ModuleName
-  toModuleName = ModuleName <<< (joinWith delimiter)
 
-  toQualified' :: (String -> a) -> String -> Maybe (Qualified a)
-  toQualified' c s = do
-    let parts = split (Pattern delimiter) s
-    lastPart <- last parts
-    let moduleName = toModuleName <$> init' parts
-    Just $ Qualified moduleName (c lastPart)
-
-  toQualified :: (String -> a) -> String -> F (Qualified a)
-  toQualified c s = exceptNoteM (toQualified' c s) errors
-
-  errors :: NonEmptyList ForeignError
-  errors = singleton (ForeignError "Error parsing qualified name")
-
-readQualifiedJSON :: forall a. (String -> a) -> String -> F (Qualified a)
-readQualifiedJSON ctor = parseJSON >=> readQualified ctor
+readQualifiedJSON
+  :: forall a. DecodeJson a => String -> Either String (Qualified a)
+readQualifiedJSON = jsonParser >=> readQualified

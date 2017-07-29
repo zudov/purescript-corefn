@@ -5,14 +5,16 @@ module CoreFn.Module
   ) where
 
 import Prelude
-import CoreFn.Expr (Bind, readBind)
-import CoreFn.Ident (Ident, readIdent)
-import CoreFn.Names (ModuleName(..), readModuleName)
+
+import Data.Argonaut.Core (Json)
+import Data.Argonaut.Decode (decodeJson, getField)
+import Data.Argonaut.Parser (jsonParser)
+import Data.Either (Either)
+
+import CoreFn.Expr (Bind)
+import CoreFn.Ident (Ident)
+import CoreFn.Names (ModuleName(..))
 import CoreFn.Util (objectProp)
-import Data.Foreign (F, Foreign, parseJSON, readArray, readString)
-import Data.Foreign.Class (readProp)
-import Data.Foreign.Index (class Index, prop)
-import Data.Traversable (traverse)
 
 -- |
 -- The CoreFn module representation
@@ -44,15 +46,15 @@ instance showModule :: Show a => Show (Module a) where
                ", moduleImports: " <> show moduleImports <>
                "})"
 
-readModule :: Foreign -> F (Module Unit)
+readModule :: Json -> Either String (Module Unit)
 readModule x = do
   o <- objectProp "Module name not found" x
-
-  builtWith     <- prop "builtWith" o.value >>= readString
-  moduleDecls   <- traverseArrayProp "decls"   o.value readBind
-  moduleExports <- traverseArrayProp "exports" o.value readIdent
-  moduleForeign <- traverseArrayProp "foreign" o.value readIdent
-  moduleImports <- traverseArrayProp "imports" o.value readModuleName
+  v <- decodeJson o.value
+  builtWith     <- getField v "builtWith"
+  moduleDecls   <- getField v "decls"
+  moduleExports <- getField v "exports"
+  moduleForeign <- getField v "foreign"
+  moduleImports <- getField v "imports"
 
   let moduleName = ModuleName o.key
 
@@ -65,16 +67,5 @@ readModule x = do
     , moduleName
     }
 
-  where
-
-  traverseArrayProp
-    :: forall a i
-     . (Index i)
-    => i
-    -> Foreign
-    -> (Foreign -> F a)
-    -> F (Array a)
-  traverseArrayProp prop value f = readProp prop value >>= readArray >>= traverse f
-
-readModuleJSON :: String -> F (Module Unit)
-readModuleJSON = parseJSON >=> readModule
+readModuleJSON :: String -> Either String (Module Unit)
+readModuleJSON = jsonParser >=> readModule

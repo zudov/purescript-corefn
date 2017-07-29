@@ -10,8 +10,6 @@ import CoreFn.Expr (Bind(..), Expr(..), Literal(..))
 import CoreFn.Ident (Ident(..))
 import CoreFn.Module (Module(..), readModuleJSON)
 import CoreFn.Names (ModuleName(..))
-import Data.Foreign (ForeignError(..))
-import Data.List.NonEmpty (singleton)
 import Data.Tuple (Tuple(..))
 import Test.Util (assertEqual, expectFailure, expectSuccess)
 
